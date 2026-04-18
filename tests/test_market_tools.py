@@ -48,6 +48,24 @@ async def test_error_body_raises_delta_api_error(client: DeltaClient):
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_none_params_are_stripped_before_send(client: DeltaClient):
+    """Delta rejects empty-string params (e.g. expiry=) as invalid dates."""
+    route = respx.get(f"{TESTNET_REST}/products").mock(
+        return_value=httpx.Response(200, json={"success": True, "result": []})
+    )
+    await client.get(
+        "/products",
+        params={"states": "live", "expiry": None, "contract_types": None, "page_size": 3},
+    )
+    sent = str(route.calls[0].request.url)
+    assert "expiry" not in sent
+    assert "contract_types" not in sent
+    assert "states=live" in sent
+    assert "page_size=3" in sent
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_429_retries_then_succeeds(client: DeltaClient):
     route = respx.get(f"{TESTNET_REST}/tickers/BTCUSD").mock(
         side_effect=[

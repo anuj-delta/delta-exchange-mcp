@@ -45,10 +45,9 @@ class DeltaClient:
         headers: dict[str, str] = {}
         body_str = ""  # TODO when POST lands in v2
         query_str = ""
-        if params:
-            filtered = {k: v for k, v in params.items() if v is not None}
-            if filtered:
-                query_str = "?" + httpx.QueryParams(filtered).__str__()
+        filtered_params = {k: v for k, v in (params or {}).items() if v is not None} or None
+        if filtered_params:
+            query_str = "?" + httpx.QueryParams(filtered_params).__str__()
 
         if auth:
             if not self.config.has_credentials:
@@ -70,7 +69,7 @@ class DeltaClient:
         for attempt in range(3):
             try:
                 resp = await self._http.request(
-                    method, path, params=params, json=json_body, headers=headers
+                    method, path, params=filtered_params, json=json_body, headers=headers
                 )
             except httpx.HTTPError as e:
                 last_error = e
