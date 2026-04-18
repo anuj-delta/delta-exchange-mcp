@@ -1,7 +1,6 @@
-"""Verify tool registration respects creds gating."""
+"""v1 is public-only: only market tools register, regardless of creds."""
 
 import asyncio
-import pytest
 
 from delta_exchange_mcp.server import build_server
 
@@ -33,7 +32,7 @@ def _tool_names(mcp) -> set[str]:
     return {t.name for t in asyncio.run(mcp.list_tools())}
 
 
-def test_no_creds_registers_only_market_tools(monkeypatch):
+def test_v1_registers_only_market_tools_without_creds(monkeypatch):
     monkeypatch.delenv("DELTA_API_KEY", raising=False)
     monkeypatch.delenv("DELTA_API_SECRET", raising=False)
     names = _tool_names(build_server())
@@ -41,17 +40,10 @@ def test_no_creds_registers_only_market_tools(monkeypatch):
     assert ACCOUNT_TOOLS.isdisjoint(names)
 
 
-def test_with_creds_registers_both_groups(monkeypatch):
+def test_v1_still_public_only_even_with_creds(monkeypatch):
+    """Account tools are v2 material — creds in env must not accidentally enable them."""
     monkeypatch.setenv("DELTA_API_KEY", "k")
     monkeypatch.setenv("DELTA_API_SECRET", "s")
     names = _tool_names(build_server())
     assert MARKET_TOOLS.issubset(names)
-    assert ACCOUNT_TOOLS.issubset(names)
-
-
-def test_trade_mode_rejected_even_with_creds(monkeypatch):
-    monkeypatch.setenv("DELTA_API_KEY", "k")
-    monkeypatch.setenv("DELTA_API_SECRET", "s")
-    monkeypatch.setenv("DELTA_MCP_MODE", "trade")
-    with pytest.raises(ValueError, match="v1"):
-        build_server()
+    assert ACCOUNT_TOOLS.isdisjoint(names)

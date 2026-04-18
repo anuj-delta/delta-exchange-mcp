@@ -3,19 +3,19 @@ import pytest
 import respx
 
 from delta_exchange_mcp.client import DeltaClient
-from delta_exchange_mcp.config import TESTNET_REST, Config
+from delta_exchange_mcp.config import INDIA_TESTNET_REST, Config
 
 
 @pytest.fixture
 def client() -> DeltaClient:
-    cfg = Config(env="testnet", mode="read", api_key=None, api_secret=None, base_url=TESTNET_REST)
+    cfg = Config(env="india_testnet", base_url=INDIA_TESTNET_REST)
     return DeltaClient(cfg)
 
 
 @pytest.mark.asyncio
 @respx.mock
 async def test_list_products_passes_csv_filters(client: DeltaClient):
-    route = respx.get(f"{TESTNET_REST}/products").mock(
+    route = respx.get(f"{INDIA_TESTNET_REST}/products").mock(
         return_value=httpx.Response(200, json={"success": True, "result": [], "meta": {"after": None}})
     )
     res = await client.get(
@@ -34,7 +34,7 @@ async def test_list_products_passes_csv_filters(client: DeltaClient):
 async def test_error_body_raises_delta_api_error(client: DeltaClient):
     from delta_exchange_mcp.errors import DeltaApiError
 
-    respx.get(f"{TESTNET_REST}/products/NOPE").mock(
+    respx.get(f"{INDIA_TESTNET_REST}/products/NOPE").mock(
         return_value=httpx.Response(
             404,
             json={"success": False, "error": {"code": "product_not_found", "context": {"symbol": "NOPE"}}},
@@ -50,7 +50,7 @@ async def test_error_body_raises_delta_api_error(client: DeltaClient):
 @respx.mock
 async def test_none_params_are_stripped_before_send(client: DeltaClient):
     """Delta rejects empty-string params (e.g. expiry=) as invalid dates."""
-    route = respx.get(f"{TESTNET_REST}/products").mock(
+    route = respx.get(f"{INDIA_TESTNET_REST}/products").mock(
         return_value=httpx.Response(200, json={"success": True, "result": []})
     )
     await client.get(
@@ -67,7 +67,7 @@ async def test_none_params_are_stripped_before_send(client: DeltaClient):
 @pytest.mark.asyncio
 @respx.mock
 async def test_429_retries_then_succeeds(client: DeltaClient):
-    route = respx.get(f"{TESTNET_REST}/tickers/BTCUSD").mock(
+    route = respx.get(f"{INDIA_TESTNET_REST}/tickers/BTCUSD").mock(
         side_effect=[
             httpx.Response(429, headers={"X-RATE-LIMIT-RESET": "50"}, json={}),
             httpx.Response(200, json={"success": True, "result": {"close": "100"}}),

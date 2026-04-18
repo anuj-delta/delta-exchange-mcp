@@ -1,4 +1,4 @@
-"""Manual testnet smoke test. Usage: uv run python scripts/smoke.py"""
+"""Manual smoke test. Usage: uv run python scripts/smoke.py (hits the env from DELTA_MCP_ENV, default india_prod)."""
 
 from __future__ import annotations
 

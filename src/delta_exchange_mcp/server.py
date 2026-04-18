@@ -6,7 +6,7 @@ from mcp.server.fastmcp import FastMCP
 
 from delta_exchange_mcp import config as config_mod
 from delta_exchange_mcp.client import DeltaClient
-from delta_exchange_mcp.tools import account, market
+from delta_exchange_mcp.tools import market
 
 
 def build_server() -> FastMCP:
@@ -15,29 +15,16 @@ def build_server() -> FastMCP:
     client = DeltaClient(cfg)
 
     market.register(mcp, client)
-    if cfg.has_credentials:
-        account.register(mcp, client)
-    else:
-        print(
-            "[delta-exchange-mcp] no DELTA_API_KEY / DELTA_API_SECRET — "
-            "account-read tools disabled, market-data tools only.",
-            file=sys.stderr,
-        )
-
-    if cfg.mode == "trade":
-        print(
-            "[delta-exchange-mcp] WARNING: mode=trade requested but trading ships in v2.",
-            file=sys.stderr,
-        )
+    # Account-read and trading tools arrive in v2 along with API-key auth.
+    # See delta_exchange_mcp/tools/account.py — registration is intentionally
+    # omitted here to keep v1 a pure public-market-data server.
 
     print(
-        f"[delta-exchange-mcp] env={cfg.env} mode={cfg.mode} "
-        f"base_url={cfg.base_url}",
+        f"[delta-exchange-mcp] env={cfg.env} base_url={cfg.base_url}",
         file=sys.stderr,
     )
     return mcp
 
 
 def main() -> None:
-    mcp = build_server()
-    mcp.run()  # stdio transport (default)
+    build_server().run()  # stdio transport (default)
