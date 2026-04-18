@@ -1,7 +1,7 @@
 [project]
 name = "delta-exchange-mcp"
 version = "0.1.0"
-description = "Add your description here"
+description = "Unofficial MCP server for Delta Exchange India — market data and account read for AI assistants."
 readme = "README.md"
 authors = [
     { name = "Anuj Sharma", email = "anuj.sharma@delta.exchange" }
@@ -27,3 +27,6 @@ dev = [
     "respx>=0.23.1",
     "ruff>=0.15.11",
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
