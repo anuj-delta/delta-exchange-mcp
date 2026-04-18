@@ -52,6 +52,34 @@ uv run pytest
 uv run delta-exchange-mcp   # starts stdio server
 ```
 
+### Testing with MCP Inspector
+
+Run the official [MCP Inspector](https://github.com/modelcontextprotocol/inspector) against this server — useful for exercising each tool without wiring it into a chat client.
+
+**CLI mode (headless, works over SSH — recommended on a VPS):**
+
+```bash
+# list registered tools
+bash scripts/inspect.sh --cli --method tools/list
+
+# call a tool
+bash scripts/inspect.sh --cli --method tools/call \
+  --tool-name get_ticker --tool-arg symbol=BTCUSD
+
+# with credentials (enables account-read tools)
+DELTA_API_KEY=... DELTA_API_SECRET=... \
+  bash scripts/inspect.sh --cli --method tools/call --tool-name get_balances
+```
+
+**Web UI mode:**
+
+```bash
+bash scripts/inspect.sh
+# → UI on http://localhost:6274, proxy on :6277
+```
+
+The helper binds to `0.0.0.0` by default; open `http://<tailscale-ip>:6274` from your laptop, or SSH-forward with `ssh -L 6274:localhost:6274 -L 6277:localhost:6277 <host>`.
+
 ## Roadmap
 
 - **M1**: 8 market-data tools (products, ticker, orderbook, candles, options chain, …).
