@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import time
 
 from delta_exchange_mcp import config as config_mod
