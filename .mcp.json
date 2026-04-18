@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "delta-exchange": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "delta-exchange-mcp"
+      ],
+      "env": {
+        "DELTA_MCP_ENV": "testnet",
+        "DELTA_MCP_MODE": "read"
+      }
+    }
+  }
+}
