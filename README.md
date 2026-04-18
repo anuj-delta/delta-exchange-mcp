@@ -56,7 +56,7 @@ uv run delta-exchange-mcp   # starts stdio server
 
 Run the official [MCP Inspector](https://github.com/modelcontextprotocol/inspector) against this server — useful for exercising each tool without wiring it into a chat client.
 
-**CLI mode (headless, works over SSH — recommended on a VPS):**
+**CLI mode (headless, works over SSH — recommended for remote hosts):**
 
 ```bash
 # list registered tools

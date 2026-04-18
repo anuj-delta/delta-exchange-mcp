@@ -8,7 +8,7 @@
 #   With creds:
 #     DELTA_API_KEY=... DELTA_API_SECRET=... bash scripts/inspect.sh
 #
-#   CLI mode — headless, great for this VPS (no browser needed).
+#   CLI mode — headless, works over SSH (no browser needed).
 #     bash scripts/inspect.sh --cli --method tools/list
 #     bash scripts/inspect.sh --cli --method tools/call \
 #       --tool-name get_ticker --tool-arg symbol=BTCUSD
