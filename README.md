@@ -4,36 +4,55 @@ Unofficial MCP (Model Context Protocol) server for **Delta Exchange India** — 
 
 > **v1 scope**: 9 public market-data tools. No credentials required, no mutating actions. Account-read + trading arrive together in v2.
 
-## Usage modes
+## Installation
 
-The same codebase supports three deployment patterns. Pick whichever matches how your users connect.
+This server is distributed **local-only**. Because it's a financial-tool MCP, users should be able to read the code running against their account — no shared hosted endpoint is provided. Pick one of the two modes below.
 
-### 1. Stdio (local) — simplest for individual use
+Repo access: the distribution repo is private at `github.com/anuj-delta/delta-exchange-mcp`. Ensure your GitHub account has read access and an SSH key or `gh auth login` set up.
 
-Each user runs the server as a subprocess of their MCP client. No network, no hosting.
+### 1. uvx (stdio) — recommended
+
+Each user runs the server as a subprocess of their MCP client. No network, no container.
+
+**Prerequisite:** [`uv`](https://docs.astral.sh/uv/getting-started/installation/) on your machine.
+
+```bash
+# sanity-check the install works before wiring up your MCP client
+uvx --from git+https://github.com/anuj-delta/delta-exchange-mcp.git delta-exchange-mcp --help
+```
+
+Add to your MCP client config (Claude Desktop, Claude Code, Cursor, Zed, etc.):
 
 ```json
 {
   "mcpServers": {
     "delta-exchange": {
       "command": "uvx",
-      "args": ["delta-exchange-mcp"],
+      "args": [
+        "--from",
+        "git+https://github.com/anuj-delta/delta-exchange-mcp.git",
+        "delta-exchange-mcp"
+      ],
       "env": { "DELTA_MCP_ENV": "india_prod" }
     }
   }
 }
 ```
 
-Requires `uv` on the user's machine.
+To update, `uvx` re-fetches the repo on each launch; pin a specific commit with `git+https://...@<sha>` if you need reproducibility.
 
-### 2. Docker (local or shared host)
+### 2. Docker (local)
+
+**Prerequisite:** Docker, plus a local clone of the repo.
 
 ```bash
+git clone https://github.com/anuj-delta/delta-exchange-mcp.git
+cd delta-exchange-mcp
 docker build -t delta-exchange-mcp .
-docker run -p 8000:8000 -e DELTA_MCP_ENV=india_prod delta-exchange-mcp
+docker run --rm -p 8000:8000 -e DELTA_MCP_ENV=india_prod delta-exchange-mcp
 ```
 
-The container runs HTTP transport on `:8000` by default. Point your MCP client at it:
+The container runs HTTP transport on `:8000`. Point your MCP client at the local URL:
 
 ```json
 {
@@ -42,23 +61,6 @@ The container runs HTTP transport on `:8000` by default. Point your MCP client a
   }
 }
 ```
-
-### 3. Hosted URL — one shared instance for a team
-
-Deploy the Docker image to any host (ECS, Cloud Run, k8s, Fly, fly-VPS). Teammates connect with zero setup:
-
-```json
-{
-  "mcpServers": {
-    "delta-exchange": { "type": "http", "url": "https://mcp.yourdomain.com/mcp" }
-  }
-}
-```
-
-**Caveats for a public/hosted deployment:**
-- Delta's rate limit (10k units / 5 min) is **per source IP** — one shared server → one shared bucket. Watch for 429s.
-- The server has no auth of its own; anyone reaching the URL can call tools. Use your ingress (Cloudflare Access, VPN, API gateway, Tailscale ACL) to gate it.
-- Only public market data is exposed in v1, so a leaked URL is low-severity. That changes in v2 when account + trading land.
 
 ## Environment variables
 
@@ -113,8 +115,8 @@ bash scripts/inspect.sh
 
 ## Roadmap
 
-- **v1** (current): 9 public market-data tools. stdio + http transports. Docker image.
-- **v2**: HMAC auth, account-read (balances/positions/orders/fills), trading (place/edit/cancel/close/leverage) gated by `DELTA_MCP_MODE=trade`, audit log, guardrails. Per-user keys → the hosted-URL pattern stops working for trading; use stdio or Docker-per-user.
+- **v1** (current): 9 public market-data tools. Distributed locally via `uvx` or Docker.
+- **v2**: HMAC auth, account-read (balances/positions/orders/fills), trading (place/edit/cancel/close/leverage) gated by `DELTA_MCP_MODE=trade`, audit log, guardrails. Per-user API keys — the local-only distribution model carries over.
 
 ## Safety
 
