@@ -62,6 +62,42 @@ The container runs HTTP transport on `:8000`. Point your MCP client at the local
 }
 ```
 
+## Add to your MCP client
+
+All three flows below assume you've installed `uv` (see Installation above) and have read access to the private repo — the client launches `uvx` as a subprocess on first run and re-fetches the repo.
+
+### Cursor
+
+[![Add to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/install-mcp?name=delta-exchange-mcp&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyItLWZyb20iLCJnaXQraHR0cHM6Ly9naXRodWIuY29tL2FudWotZGVsdGEvZGVsdGEtZXhjaGFuZ2UtbWNwLmdpdCIsImRlbHRhLWV4Y2hhbmdlLW1jcCJdLCJlbnYiOnsiREVMVEFfTUNQX0VOViI6ImluZGlhX3Byb2QifX0=)
+
+Clicking the button opens Cursor with the server pre-filled — review and accept the install prompt.
+
+### Claude Code
+
+```bash
+claude mcp add delta-exchange-mcp \
+  --scope user \
+  --env DELTA_MCP_ENV=india_prod \
+  -- uvx --from git+https://github.com/anuj-delta/delta-exchange-mcp.git delta-exchange-mcp
+```
+
+`--scope user` makes the server available across all projects. Drop it for project-local scope. Verify with `claude mcp list`.
+
+### Codex
+
+Add to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.delta-exchange-mcp]
+command = "uvx"
+args = ["--from", "git+https://github.com/anuj-delta/delta-exchange-mcp.git", "delta-exchange-mcp"]
+env = { DELTA_MCP_ENV = "india_prod" }
+```
+
+### Other clients (Claude Desktop, Zed, Windsurf, etc.)
+
+Use the generic JSON config shown under [Installation → uvx](#1-uvx-stdio--recommended).
+
 ## Environment variables
 
 | Var | Default | Purpose |
