@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import time
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -21,6 +23,10 @@ def sign(secret: str, method: str, timestamp: str, path: str, query: str, body: 
 class DeltaClient:
     def __init__(self, config: Config, http: httpx.AsyncClient | None = None):
         self.config = config
+        # Delta signs the FULL path including the `/v2` prefix; httpx joins base_url+path
+        # at request time, but `sign()` only sees the relative path we pass in. Capture
+        # the prefix once so authed calls can produce the documented payload shape.
+        self._base_path = urlparse(config.base_url).path.rstrip("/")
         self._http = http or httpx.AsyncClient(
             base_url=config.base_url,
             timeout=httpx.Timeout(connect=10.0, read=30.0, write=30.0, pool=30.0),
@@ -57,7 +63,7 @@ class DeltaClient:
                 self.config.api_secret or "",  # guarded by has_credentials
                 method,
                 ts,
-                path,
+                f"{self._base_path}{path}",
                 query_str,
                 body_str,
             )
@@ -79,13 +85,9 @@ class DeltaClient:
 
             if resp.status_code == 429 and method == "GET" and attempt < 2:
                 reset_ms = int(resp.headers.get("X-RATE-LIMIT-RESET", "1000"))
-                import asyncio
-
                 await asyncio.sleep(min(reset_ms, 5000) / 1000.0)
                 continue
             if 500 <= resp.status_code < 600 and method == "GET" and attempt < 2:
-                import asyncio
-
                 await asyncio.sleep(0.5 * (2**attempt))
                 continue
 
