@@ -1,4 +1,4 @@
-"""v1 is public-only: only market tools register, regardless of creds."""
+"""Account tools register only when both DELTA_API_KEY and DELTA_API_SECRET are set."""
 
 import asyncio
 
@@ -18,12 +18,17 @@ MARKET_TOOLS = {
 }
 
 ACCOUNT_TOOLS = {
-    "get_balances",
     "get_positions",
+    "get_margined_positions",
+    "get_wallet_balances",
+    "get_wallet_transactions",
+    "get_fills",
     "get_open_orders",
     "get_order_history",
-    "get_order",
-    "get_fills",
+    "get_order_by_id",
+    "get_product_leverage",
+    "get_trading_stats",
+    "get_trading_preferences",
     "get_profile",
 }
 
@@ -32,7 +37,7 @@ def _tool_names(mcp) -> set[str]:
     return {t.name for t in asyncio.run(mcp.list_tools())}
 
 
-def test_v1_registers_only_market_tools_without_creds(monkeypatch):
+def test_market_only_without_creds(monkeypatch):
     monkeypatch.delenv("DELTA_API_KEY", raising=False)
     monkeypatch.delenv("DELTA_API_SECRET", raising=False)
     names = _tool_names(build_server())
@@ -40,10 +45,17 @@ def test_v1_registers_only_market_tools_without_creds(monkeypatch):
     assert ACCOUNT_TOOLS.isdisjoint(names)
 
 
-def test_v1_still_public_only_even_with_creds(monkeypatch):
-    """Account tools are v2 material — creds in env must not accidentally enable them."""
+def test_account_tools_register_with_creds(monkeypatch):
     monkeypatch.setenv("DELTA_API_KEY", "k")
     monkeypatch.setenv("DELTA_API_SECRET", "s")
+    names = _tool_names(build_server())
+    assert MARKET_TOOLS.issubset(names)
+    assert ACCOUNT_TOOLS.issubset(names)
+
+
+def test_partial_creds_skip_account_tools(monkeypatch):
+    monkeypatch.setenv("DELTA_API_KEY", "k")
+    monkeypatch.delenv("DELTA_API_SECRET", raising=False)
     names = _tool_names(build_server())
     assert MARKET_TOOLS.issubset(names)
     assert ACCOUNT_TOOLS.isdisjoint(names)

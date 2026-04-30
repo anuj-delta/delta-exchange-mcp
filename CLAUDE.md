@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project in one line
 
-FastMCP server that wraps Delta Exchange India's public REST endpoints as MCP tools, deployable as a stdio subprocess, a local Docker container, or a hosted HTTP endpoint.
+FastMCP server (stdio only) that wraps Delta Exchange India's REST API as MCP tools — public market data unconditionally, plus authenticated read-only account tools when `DELTA_API_KEY`/`DELTA_API_SECRET` are set.
 
 ## Commands
 
@@ -15,16 +15,13 @@ uv run pytest tests/test_market_tools.py::test_429_retries_then_succeeds  # sing
 uv run ruff check src tests scripts            # lint
 uv run ruff check --fix src tests scripts      # lint + autofix
 
-uv run delta-exchange-mcp                      # stdio transport (default)
-DELTA_MCP_TRANSPORT=http uv run delta-exchange-mcp   # http on :8000
+uv run delta-exchange-mcp                      # stdio (the only transport)
 
 uv run python scripts/smoke.py                 # live smoke against DELTA_MCP_ENV
 
-bash scripts/inspect.sh --cli --method tools/list                                # Inspector CLI — list tools
+bash scripts/inspect.sh --cli --method tools/list
 bash scripts/inspect.sh --cli --method tools/call --tool-name get_ticker --tool-arg symbol=BTCUSD
 bash scripts/inspect.sh                                                          # Inspector web UI on :6274
-
-docker build -t delta-exchange-mcp . && docker run -p 8000:8000 delta-exchange-mcp
 ```
 
 **Rebuilding the editable install after changing `pyproject.toml` or entry points**: `uv sync` again — `uv run` caches the build.
@@ -35,59 +32,55 @@ docker build -t delta-exchange-mcp . && docker run -p 8000:8000 delta-exchange-m
 
 Each tool module exposes `register(mcp: FastMCP, client: DeltaClient) -> None` that attaches `@mcp.tool()`-decorated closures. `server.py::build_server()` instantiates `DeltaClient` once and passes it into every `register` call. **To add a tool group**: create `src/delta_exchange_mcp/tools/<group>.py` with a `register(mcp, client)`, then call it from `build_server`.
 
+`market.register` always runs; `account.register` runs only when `cfg.has_credentials` is true (both `DELTA_API_KEY` **and** `DELTA_API_SECRET` set).
+
 ### DeltaClient — single point for HTTP concerns
 
-`src/delta_exchange_mcp/client.py` centralizes five cross-cutting behaviors that every tool depends on. Read this file before touching any tool logic:
+`src/delta_exchange_mcp/client.py` centralizes the cross-cutting behaviors every tool depends on. Read this file before touching any tool logic:
 
 1. **None-param stripping** — `filtered_params` is computed once and fed to **both** the signing payload (`query_str`) and `httpx.request(params=...)`. Delta's API rejects `?expiry=` as "invalid date"; this is why the same filter applies in two places. Regression test: `test_none_params_are_stripped_before_send`.
 2. **Retry policy** — 429 backs off using the `X-RATE-LIMIT-RESET` header (ms); 5xx uses exponential backoff. Only retries GET; POST/PUT/DELETE never auto-retry.
-3. **Error-envelope unwrapping** — `{success: false, error: {code, context}}` is raised as `DeltaApiError` (see `errors.py`); success responses with a `result` key return `{"result": ..., "meta": ...}`, otherwise raw JSON.
-4. **HMAC-SHA256 signing** — `sign()` concatenates `method + timestamp + path + query + body`. Enabled per-call via `client.get(..., auth=True)`. **Dormant in v1** because no registered tool sets `auth=True`.
+3. **Error-envelope unwrapping** — `{success: false, error: {code, context}}` is raised as `DeltaApiError` (see `errors.py`). `errors.py` carries a hint table for documented auth codes (`SignatureExpired`, `InvalidApiKey`, `UnauthorizedApiAccess`, `ip_not_whitelisted_for_api_key`, `Signature Mismatch`) and extracts the request IP from the error context for the IP-whitelist case.
+4. **HMAC-SHA256 signing** — `sign()` concatenates `method + timestamp + path + query + body`. The signing path **must include the `/v2` prefix** per Delta's spec; the client derives it once from `urlparse(base_url).path` and prepends it before calling `sign()`. Don't pass `path="/v2/..."` from callers — they pass relative paths like `/orders`, the client adds the prefix.
 5. **User-Agent header is required by Delta** — a missing one returns 403. Do not remove it.
 
-### Transport branching
+### Auth surface registration
 
-`server.main()` reads `cfg.transport`:
-- `stdio` → `mcp.run()` — default, used by Claude Desktop/Code/Cursor/Zed.
-- `http` → `mcp.run(transport="streamable-http")` — FastMCP is constructed with `stateless_http=True, json_response=True` for this mode (production-recommended per MCP SDK docs).
+`tools/account.py` exposes 12 authenticated read-only tools (positions / margined-positions / wallet-balances / wallet-transactions / fills / open-orders / order-history / order-by-id / product-leverage / trading-stats / trading-preferences / profile). All call `client.get(..., auth=True)`.
 
-Docker image defaults to `http` (see `Dockerfile` ENV block).
+`server.build_server()` registers them only when both creds are present. Without creds, the server runs in pure-public mode — same behaviour as before this surface existed.
 
-### v1 scope lives in `server.py`, not in config
-
-`tools/account.py` has 7 fully-implemented private-endpoint tools, and `client.py` has working HMAC auth. **Neither is registered in v1.** `server.py::build_server()` deliberately only calls `market.register(...)`. The `api_key`/`api_secret` fields on `Config` are loaded from env but unused. When v2 trading lands, re-enable registration and wire a `DELTA_MCP_MODE=trade` gate — the code is ready for it.
-
-Do **not** delete `account.py` or the signer as "dead code" — they're preserved infrastructure for v2.
+There's no future v2 "trade" gate yet; when that lands, add a `DELTA_MCP_MODE=trade` flag and a `tools/trading.py` register call gated on `(has_credentials and mode == "trade")`. The signer + auth plumbing is already in place.
 
 ### Environment naming
 
 `DELTA_MCP_ENV` values are `india_prod` / `india_testnet` (not `mainnet`/`testnet`) to match Delta's own URL naming (`api.india.delta.exchange`, `cdn-ind.testnet.deltaex.org`). `india_prod` is the default — users ask "what's BTCUSD mid", they mean prod, not testnet.
 
+API keys are env-scoped on Delta's side: prod keys created at delta.exchange only work against `india_prod`; demo keys at demo.delta.exchange only work against `india_testnet`. Mismatch → `InvalidApiKey`.
+
 ## Reference — Delta Exchange API
 
-The upstream source of truth for endpoint shapes is the **Slate docs repo at `/home/delta/work/slate`**, specifically `swagger_v2.json` and `source/includes/_*.md`. When adding or fixing a tool:
+The upstream source of truth for endpoint shapes is the **Slate docs repo at `/Users/anuj/Documents/work/Delta/slate`**, specifically `swagger_v2.json` and `source/includes/_*.md`. When adding or fixing a tool:
 
 ```bash
-jq '.paths["/products"].get.parameters' /home/delta/work/slate/swagger_v2.json
+jq '.paths["/products"].get.parameters' /Users/anuj/Documents/work/Delta/slate/swagger_v2.json
 ```
 
-Auth spec lives at `/home/delta/work/slate/source/includes/_authentication.md` (signing payload format, ±5 sec timestamp window).
+Auth spec lives at `source/includes/_authentication.md` (signing payload format, ±5 sec timestamp window, documented error codes).
 
-## Distribution modes
+## Distribution
 
-Three, all from the same image/package (see README for the user-facing config snippets):
+**Local stdio only.** Each user runs the server as a subprocess of their MCP client via `uvx`:
 
-| Mode | Transport | Who runs it |
-|---|---|---|
-| stdio (via `uvx`) | stdio | each user locally |
-| Docker local | http | each user locally in a container |
-| Hosted URL | http | one shared deployment |
+```bash
+uvx --from git+https://github.com/anuj-delta/delta-exchange-mcp.git delta-exchange-mcp
+```
 
-**The hosted-URL mode only works for v1's public-data surface.** v2 (trading) requires per-user API keys, which a shared HTTP server cannot route safely — v2 users will need stdio or Docker-per-user. Any architectural decision that assumes a persistent hosted URL should be revisited before v2 ships.
+There is intentionally **no HTTP transport, no Docker image, and no shared hosted endpoint**. Per-user API keys can't safely route through a shared HTTP server, and the financial-tool nature of this MCP means users should be able to read the code that runs against their account. If you find yourself adding `streamable-http`, `transport=` flags, or a `Dockerfile`, stop and discuss first.
 
 ## Tests
 
-`respx` mocks httpx for unit tests (no live network). Live verification happens through `scripts/smoke.py` (Python-level) and `scripts/inspect.sh --cli` (MCP-protocol-level) — both hit real testnet/prod and are run manually, not in CI. When fixing a bug surfaced by live use, add a `respx` regression test (see `test_none_params_are_stripped_before_send` for the pattern).
+`respx` mocks httpx for unit tests (no live network). Live verification happens through `scripts/smoke.py` (Python-level) and `scripts/inspect.sh --cli` (MCP-protocol-level) — both hit real testnet/prod and are run manually, not in CI. When fixing a bug surfaced by live use, add a `respx` regression test (see `test_none_params_are_stripped_before_send` and `test_signing_payload_includes_v2_prefix` for the pattern).
 
 ## Distribution repo
 

@@ -1,4 +1,4 @@
-"""Private account-read tools (M2). Registered only when creds are present."""
+"""Authenticated read-only account tools. Registered when DELTA_API_KEY/SECRET are set."""
 
 from __future__ import annotations
 
@@ -24,23 +24,93 @@ def _csv_ints(values: list[int] | None) -> str | None:
 
 def register(mcp: FastMCP, client: DeltaClient) -> None:
     @mcp.tool()
-    async def get_balances() -> dict[str, Any]:
+    async def get_positions(
+        product_id: int | None = Field(default=None, description="Single product id."),
+        underlying_asset_symbol: str | None = Field(
+            default=None,
+            description="Underlying asset symbol (e.g. BTC) — returns all positions under it.",
+        ),
+    ) -> dict[str, Any]:
+        """Open position(s). Pass exactly one of product_id or underlying_asset_symbol."""
+        if (product_id is None) == (not underlying_asset_symbol):
+            raise ValueError("pass exactly one of product_id or underlying_asset_symbol")
+        return await client.get(
+            "/positions",
+            params={"product_id": product_id, "underlying_asset_symbol": underlying_asset_symbol},
+            auth=True,
+        )
+
+    @mcp.tool()
+    async def get_margined_positions(
+        product_ids: list[int] | None = Field(default=None, description="Max 10 product ids."),
+        contract_types: list[str] | None = Field(
+            default=None,
+            description="Subset of: perpetual_futures, call_options, put_options.",
+        ),
+    ) -> dict[str, Any]:
+        """All open margined positions, optionally filtered."""
+        return await client.get(
+            "/positions/margined",
+            params={
+                "product_ids": _csv_ints(product_ids),
+                "contract_types": _csv(contract_types),
+            },
+            auth=True,
+        )
+
+    @mcp.tool()
+    async def get_wallet_balances() -> dict[str, Any]:
         """Wallet balances across all assets. Fields: asset_symbol, balance, available_balance, position_margin."""
         return await client.get("/wallet/balances", auth=True)
 
     @mcp.tool()
-    async def get_positions(
-        product_id: int | None = Field(default=None, description="Single product id."),
-        underlying_asset_symbol: str | None = Field(
-            default=None, description="Underlying asset symbol (e.g. BTC) — returns all positions under it."
+    async def get_wallet_transactions(
+        asset_ids: list[int] | None = Field(default=None, description="Filter by asset ids."),
+        transaction_types: list[str] | None = Field(
+            default=None,
+            description="Filter by transaction type (e.g. deposit, withdrawal, funding, settlement, commission).",
         ),
+        start_time_us: int | None = Field(default=None, description="Microseconds epoch."),
+        end_time_us: int | None = None,
+        page_size: int = Field(default=50, ge=1, le=200),
+        after: str | None = None,
+        before: str | None = None,
     ) -> dict[str, Any]:
-        """Open positions. Pass product_id OR underlying_asset_symbol. Omit both to get all margined positions."""
-        if product_id is None and not underlying_asset_symbol:
-            return await client.get("/positions/margined", auth=True)
+        """Wallet transaction history. Paginated. Timestamps are microseconds."""
         return await client.get(
-            "/positions",
-            params={"product_id": product_id, "underlying_asset_symbol": underlying_asset_symbol},
+            "/wallet/transactions",
+            params={
+                "asset_ids": _csv_ints(asset_ids),
+                "transaction_types": _csv(transaction_types),
+                "start_time": start_time_us,
+                "end_time": end_time_us,
+                "page_size": page_size,
+                "after": after,
+                "before": before,
+            },
+            auth=True,
+        )
+
+    @mcp.tool()
+    async def get_fills(
+        product_ids: list[int] | None = None,
+        contract_types: list[str] | None = None,
+        start_time_us: int | None = Field(default=None, description="Microseconds epoch."),
+        end_time_us: int | None = None,
+        page_size: int = Field(default=50, ge=1, le=200),
+        after: str | None = None,
+    ) -> dict[str, Any]:
+        """Your trade fills (executed trades). Paginated. Timestamps are microseconds."""
+        return await client.get(
+            "/fills",
+            params={
+                "product_ids": _csv_ints(product_ids),
+                "contract_types": _csv(contract_types),
+                "start_time": start_time_us,
+                "end_time": end_time_us,
+                "page_size": page_size,
+                "after": after,
+            },
             auth=True,
         )
 
@@ -70,7 +140,8 @@ def register(mcp: FastMCP, client: DeltaClient) -> None:
         product_ids: list[int] | None = None,
         contract_types: list[str] | None = None,
         order_types: list[str] | None = Field(
-            default=None, description="market, limit, stop_market, stop_limit, all_stop."
+            default=None,
+            description="market, limit, stop_market, stop_limit, all_stop.",
         ),
         start_time_us: int | None = Field(default=None, description="Microseconds epoch (note: micro, not milli)."),
         end_time_us: int | None = None,
@@ -93,7 +164,7 @@ def register(mcp: FastMCP, client: DeltaClient) -> None:
         )
 
     @mcp.tool()
-    async def get_order(
+    async def get_order_by_id(
         order_id: int | None = Field(default=None, description="Delta-assigned order id."),
         client_order_id: str | None = Field(default=None, description="Your client_order_id if you set one."),
     ) -> dict[str, Any]:
@@ -105,34 +176,23 @@ def register(mcp: FastMCP, client: DeltaClient) -> None:
         return await client.get(f"/orders/client_order_id/{client_order_id}", auth=True)
 
     @mcp.tool()
-    async def get_fills(
-        product_ids: list[int] | None = None,
-        contract_types: list[str] | None = None,
-        start_time_us: int | None = Field(default=None, description="Microseconds epoch."),
-        end_time_us: int | None = None,
-        page_size: int = Field(default=50, ge=1, le=200),
-        after: str | None = None,
+    async def get_product_leverage(
+        product_id: int = Field(description="Product id to fetch leverage for."),
     ) -> dict[str, Any]:
-        """Your trade fills (executed trades). Paginated. Timestamps are microseconds."""
-        return await client.get(
-            "/fills",
-            params={
-                "product_ids": _csv_ints(product_ids),
-                "contract_types": _csv(contract_types),
-                "start_time": start_time_us,
-                "end_time": end_time_us,
-                "page_size": page_size,
-                "after": after,
-            },
-            auth=True,
-        )
+        """Configured order leverage for a product."""
+        return await client.get(f"/products/{product_id}/orders/leverage", auth=True)
+
+    @mcp.tool()
+    async def get_trading_stats() -> dict[str, Any]:
+        """Account-level trading volume / stats."""
+        return await client.get("/stats", auth=True)
+
+    @mcp.tool()
+    async def get_trading_preferences() -> dict[str, Any]:
+        """User trading preferences (margin mode, notifications, etc.)."""
+        return await client.get("/users/trading_preferences", auth=True)
 
     @mcp.tool()
     async def get_profile() -> dict[str, Any]:
-        """User profile merged with trading preferences (margin mode, notifications, etc.)."""
-        profile = await client.get("/profile", auth=True)
-        try:
-            prefs = await client.get("/users/trading_preferences", auth=True)
-        except Exception as e:  # noqa: BLE001 — prefs is best-effort, don't fail profile lookup
-            prefs = {"error": str(e)}
-        return {"profile": profile, "trading_preferences": prefs}
+        """User profile."""
+        return await client.get("/profile", auth=True)
