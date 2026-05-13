@@ -34,7 +34,11 @@ class DeltaClient:
         self._http = http or httpx.AsyncClient(
             base_url=config.base_url,
             timeout=httpx.Timeout(connect=10.0, read=30.0, write=30.0, pool=30.0),
-            headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+            headers={
+                "User-Agent": USER_AGENT,
+                "Source": USER_AGENT,
+                "Accept": "application/json",
+            },
         )
 
     async def aclose(self) -> None:
